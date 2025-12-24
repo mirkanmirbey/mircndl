@@ -3,125 +3,142 @@ import yfinance as yf
 import pandas as pd
 import time
 
-# --- SAYFA AYARLARI ---
-st.set_page_config(page_title="mircndl", page_icon="🕯️", layout="centered")
+# --- MARKA AYARLARI (mircndl) ---
+st.set_page_config(
+    page_title="mircndl",  # Tarayıcı sekmesinde yazacak isim
+    page_icon="🕯️",        # Uygulama ikonu (Mum)
+    layout="centered"
+)
 
-# --- TASARIM (CSS) ---
+# --- TASARIM (DARK CANDLE THEME) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #0E1117; color: white; }
-    .signal-card { 
-        background-color: #262730; 
-        padding: 20px; 
-        border-radius: 15px; 
-        margin-bottom: 15px; 
-        border-left: 5px solid #4CAF50;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    /* Ana Arka Plan */
+    .stApp { 
+        background-color: #0E1117; 
+        color: white; 
     }
-    .hisse-baslik { font-size: 24px; font-weight: bold; color: #fff; }
-    .bilgi { font-size: 14px; color: #aaa; }
+    
+    /* Sinyal Kartı Tasarımı */
+    .signal-card { 
+        background-color: #1E1E1E; 
+        padding: 20px; 
+        border-radius: 12px; 
+        margin-bottom: 15px; 
+        border-left: 6px solid #4CAF50; /* Yeşil Mum Çizgisi */
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    
+    /* Metin Stilleri */
+    .hisse-baslik { font-size: 26px; font-weight: bold; color: #fff; letter-spacing: 1px; }
+    .kalite-badge { background-color: #2E7D32; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold;}
+    .bilgi-baslik { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .bilgi-deger { font-size: 20px; font-weight: bold; color: #eee; }
+    
+    /* Buton Stili */
+    div.stButton > button {
+        width: 100%;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        padding: 10px;
+        font-weight: bold;
+        transition: 0.3s;
+    }
+    div.stButton > button:hover {
+        background-color: #45a049;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- BAŞLIK ---
-st.title("🕯️ mircndl")
-st.caption("Bulut Tabanlı Swing Trade Asistanı")
+# --- ÜST KISIM (HEADER) ---
+st.title("🕯️ mircndl") 
+st.caption("Mirkan & Candle • Algoritmik Swing Analizi") # Senin İmzan
 st.divider()
 
 # --- ARKA PLAN MOTORU (BEYİN) ---
-# Verileri önbelleğe alıyoruz ki her tıkta yavaşlamasın
-@st.cache_data(ttl=900)  # 15 dakikada bir veriyi tazele
+@st.cache_data(ttl=900)
 def verileri_analiz_et():
-    # Takip Listesi (BIST 30'dan seçmeler)
-    hisseler = ["THYAO.IS", "ASELS.IS", "KCHOL.IS", "GARAN.IS", "SISE.IS", "AKBNK.IS", "TUPRS.IS", "EREGL.IS"]
+    # Takip Listesi
+    hisseler = ["THYAO.IS", "ASELS.IS", "KCHOL.IS", "GARAN.IS", "SISE.IS", "AKBNK.IS", "TUPRS.IS", "EREGL.IS", "BIMAS.IS", "FROTO.IS"]
     sinyaller = []
 
     for sembol in hisseler:
         try:
-            # Veri Çek (Doğrudan Yahoo Finance'den)
-            # 1 Saatlik veriyi alıp 4 Saatlik Swing mumuna çevireceğiz
-            df = yf.download(sembol, period="2mo", interval="1h", progress=False, multi_level_index=False)
+            # Veri Çek (Yahoo Finance)
+            df = yf.download(sembol, period="3mo", interval="1h", progress=False, multi_level_index=False)
             
-            # Sütun isimlerini düzelt (Bazen karışık gelir)
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.droplevel(1)
 
-            # Veri boşsa geç
-            if df.empty or len(df) < 50:
-                continue
+            if df.empty or len(df) < 50: continue
 
-            # 4 Saatlik (Swing) Dönüşümü
-            ozet_dict = {'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}
-            df_4h = df.resample('4h').agg(ozet_dict).dropna()
+            # Swing Dönüşümü (4 Saatlik)
+            ozet = {'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}
+            df_4h = df.resample('4h').agg(ozet).dropna()
 
-            # İndikatör Hesaplamaları
-            # 1. Trend (EMA 200)
+            # İndikatörler
             df_4h['EMA_200'] = df_4h['Close'].ewm(span=200).mean()
             
-            # 2. RSI
             delta = df_4h['Close'].diff()
             gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14).mean()
             loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
             rs = gain / loss
             df_4h['RSI'] = 100 - (100 / (1 + rs))
 
-            # Son Mum Analizi
             son = df_4h.iloc[-1]
             
-            # --- STRATEJİ ---
-            # Trend yukarı mı? (Fiyat > EMA200)
+            # Strateji
             trend_pozitif = son['Close'] > son['EMA_200']
-            
-            # RSI ucuz mu? (Swing için genelde 45-50 altı iyidir)
-            rsi_uygun = son['RSI'] < 60 
+            rsi_uygun = son['RSI'] < 55 # Swing için biraz gevşettik
 
-            # Ekranda bir şeyler görmek için kriteri biraz esnek tutuyoruz
             if trend_pozitif and rsi_uygun:
-                kalite = "YÜKSEK 🔥" if son['RSI'] < 35 else "NORMAL"
+                kalite = "GÜÇLÜ AL 🔥" if son['RSI'] < 35 else "AL SİNYALİ"
                 sinyaller.append({
-                    "sembol": sembol.replace(".IS", ""), # .IS kısmını görselden silelim
+                    "sembol": sembol.replace(".IS", ""),
                     "fiyat": son['Close'],
-                    "hedef": son['Close'] * 1.10, # %10 Kar hedefi
+                    "hedef": son['Close'] * 1.08, # %8 Hedef
                     "rsi": son['RSI'],
-                    "kalite": kalite,
-                    "tarih": str(son.name)
+                    "kalite": kalite
                 })
 
-        except Exception as e:
+        except:
             continue
             
     return sinyaller
 
-# --- ARAYÜZ (YÜZ) ---
-if st.button("🔄 Piyasayı Tara", use_container_width=True):
-    with st.spinner('Yapay zeka BIST verilerini tarıyor...'):
-        time.sleep(0.5) # Animasyon hissi
+# --- ARAYÜZ (GÖVDE) ---
+if st.button("PİYASAYI TARA", use_container_width=True):
+    with st.spinner('mircndl algoritmaları çalışıyor...'):
+        time.sleep(0.8)
         firsatlar = verileri_analiz_et()
         
         if firsatlar:
-            st.success(f"Toplam {len(firsatlar)} potansiyel fırsat bulundu!")
+            st.success(f"Analiz Tamamlandı: {len(firsatlar)} Mum Formasyonu Bulundu")
             
             for s in firsatlar:
-                renk = "green"
-                ikon = "🚀"
-                
                 st.markdown(f"""
                 <div class="signal-card">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="hisse-baslik">{ikon} {s['sembol']}</span>
-                        <span style="background-color:#4CAF50; padding:4px 8px; border-radius:5px; font-size:12px;">{s['kalite']}</span>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                        <span class="hisse-baslik">{s['sembol']}</span>
+                        <span class="kalite-badge">{s['kalite']}</span>
                     </div>
-                    <div style="margin-top:10px; display:flex; justify-content:space-between;">
-                        <div class="bilgi">Giriş Fiyatı<br><strong style="color:white; font-size:18px;">{s['fiyat']:.2f} ₺</strong></div>
-                        <div class="bilgi">Hedef<br><strong style="color:#4CAF50; font-size:18px;">{s['hedef']:.2f} ₺</strong></div>
-                        <div class="bilgi">RSI<br><strong style="color:orange; font-size:18px;">{s['rsi']:.1f}</strong></div>
+                    <div style="display:flex; justify-content:space-between;">
+                        <div>
+                            <div class="bilgi-baslik">GÜNCEL FİYAT</div>
+                            <div class="bilgi-deger">{s['fiyat']:.2f} ₺</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div class="bilgi-baslik">HEDEF</div>
+                            <div class="bilgi-deger" style="color:#4CAF50;">{s['hedef']:.2f} ₺</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px; padding-top:10px; border-top:1px solid #333; display:flex; justify-content:space-between; align-items:center;">
+                         <span style="font-size:12px; color:#666;">RSI Göstergesi</span>
+                         <span style="color:orange; font-weight:bold;">{s['rsi']:.1f}</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.info("Şu an stratejiye (Trend + RSI) uyan hisse bulunamadı.")
-            st.markdown("**Takip Listesi:** THYAO, ASELS, KCHOL, GARAN, SISE, AKBNK")
-
-# --- ALT BİLGİ ---
-st.markdown("---")
-st.caption("mircndl v2.0 Cloud • API sorunu giderildi.")
+            st.warning("Şu an stratejiye uygun mum yapısı oluşmadı.")
+            st.caption("Takip Listesi: BIST 30 (THYAO, ASELS, KCHOL...)")
