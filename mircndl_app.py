@@ -1,83 +1,83 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import plotly.graph_objects as go
 import time
 
-# --- MARKA AYARLARI (mircndl) ---
+# --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="mircndl",  # Tarayıcı sekmesinde yazacak isim
-    page_icon="🕯️",        # Uygulama ikonu (Mum)
+    page_title="mircndl",
+    page_icon="🕯️",
     layout="centered"
 )
 
-# --- TASARIM (DARK CANDLE THEME) ---
+# --- TASARIM (DARK MODE) ---
 st.markdown("""
     <style>
-    /* Ana Arka Plan */
-    .stApp { 
-        background-color: #0E1117; 
-        color: white; 
+    .stApp { background-color: #0E1117; color: white; }
+    .stButton>button { 
+        width: 100%; border-radius: 10px; background-color: #4CAF50; 
+        color: white; font-weight: bold; padding: 10px; border: none;
     }
-    
-    /* Sinyal Kartı Tasarımı */
-    .signal-card { 
-        background-color: #1E1E1E; 
-        padding: 20px; 
-        border-radius: 12px; 
-        margin-bottom: 15px; 
-        border-left: 6px solid #4CAF50; /* Yeşil Mum Çizgisi */
-        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-    }
-    
-    /* Metin Stilleri */
-    .hisse-baslik { font-size: 26px; font-weight: bold; color: #fff; letter-spacing: 1px; }
-    .kalite-badge { background-color: #2E7D32; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold;}
-    .bilgi-baslik { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-    .bilgi-deger { font-size: 20px; font-weight: bold; color: #eee; }
-    
-    /* Buton Stili */
-    div.stButton > button {
-        width: 100%;
-        background-color: #4CAF50;
-        color: white;
-        border: none;
-        padding: 10px;
-        font-weight: bold;
-        transition: 0.3s;
-    }
-    div.stButton > button:hover {
-        background-color: #45a049;
-    }
+    .stButton>button:hover { background-color: #45a049; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- ÜST KISIM (HEADER) ---
-st.title("🕯️ mircndl") 
-st.caption("Mirkan & Candle • Algoritmik Swing Analizi") # Senin İmzan
+# --- BAŞLIK ---
+st.title("🕯️ mircndl")
+st.caption("Mirkan & Candle • Gerçek Zamanlı Mum Analizi")
 st.divider()
 
-# --- ARKA PLAN MOTORU (BEYİN) ---
+# --- GRAFİK ÇİZME FONKSİYONU ---
+def grafik_ciz(sembol, df):
+    # Son 40 mumu alalım ki grafik telefonda net görünsün
+    df_son = df.tail(40)
+    
+    fig = go.Figure(data=[go.Candlestick(
+        x=df_son.index,
+        open=df_son['Open'],
+        high=df_son['High'],
+        low=df_son['Low'],
+        close=df_son['Close'],
+        increasing_line_color='#26A69A', # Borsa Yeşili
+        decreasing_line_color='#EF5350'  # Borsa Kırmızısı
+    )])
+
+    # Grafik Ayarları (Karanlık Tema)
+    fig.update_layout(
+        title=f"{sembol} - 4 Saatlik Mumlar",
+        title_font_size=14,
+        dragmode='pan',
+        template="plotly_dark", # Koyu Tema
+        height=350, # Mobilde çok yer kaplamasın
+        margin=dict(l=0, r=0, t=30, b=0),
+        xaxis_rangeslider_visible=False # Alttaki kaydırma çubuğunu gizle
+    )
+    return fig
+
+# --- ANALİZ MOTORU ---
 @st.cache_data(ttl=900)
 def verileri_analiz_et():
-    # Takip Listesi
-    hisseler = ["THYAO.IS", "ASELS.IS", "KCHOL.IS", "GARAN.IS", "SISE.IS", "AKBNK.IS", "TUPRS.IS", "EREGL.IS", "BIMAS.IS", "FROTO.IS"]
+    hisseler = ["THYAO.IS", "ASELS.IS", "KCHOL.IS", "GARAN.IS", "SISE.IS", 
+                "AKBNK.IS", "TUPRS.IS", "EREGL.IS", "BIMAS.IS", "FROTO.IS", "SASA.IS", "HEKTS.IS"]
     sinyaller = []
 
     for sembol in hisseler:
         try:
-            # Veri Çek (Yahoo Finance)
-            df = yf.download(sembol, period="3mo", interval="1h", progress=False, multi_level_index=False)
+            # Veri Çek
+            df = yf.download(sembol, period="3mo", interval="1h", progress=False)
             
+            # MultiIndex düzeltmesi
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.droplevel(1)
 
-            if df.empty or len(df) < 50: continue
+            if len(df) < 50: continue
 
-            # Swing Dönüşümü (4 Saatlik)
+            # 4 Saatlik Dönüşüm
             ozet = {'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}
             df_4h = df.resample('4h').agg(ozet).dropna()
 
-            # İndikatörler
+            # İndikatörler (EMA & RSI)
             df_4h['EMA_200'] = df_4h['Close'].ewm(span=200).mean()
             
             delta = df_4h['Close'].diff()
@@ -87,58 +87,44 @@ def verileri_analiz_et():
             df_4h['RSI'] = 100 - (100 / (1 + rs))
 
             son = df_4h.iloc[-1]
-            
-            # Strateji
-            trend_pozitif = son['Close'] > son['EMA_200']
-            rsi_uygun = son['RSI'] < 55 # Swing için biraz gevşettik
 
-            if trend_pozitif and rsi_uygun:
-                kalite = "GÜÇLÜ AL 🔥" if son['RSI'] < 35 else "AL SİNYALİ"
+            # Strateji
+            trend = son['Close'] > son['EMA_200']
+            rsi_uygun = son['RSI'] < 55 
+
+            if trend and rsi_uygun:
                 sinyaller.append({
                     "sembol": sembol.replace(".IS", ""),
                     "fiyat": son['Close'],
-                    "hedef": son['Close'] * 1.08, # %8 Hedef
                     "rsi": son['RSI'],
-                    "kalite": kalite
+                    "veri": df_4h # Grafiği çizmek için veriyi de saklıyoruz
                 })
 
-        except:
+        except Exception:
             continue
             
     return sinyaller
 
-# --- ARAYÜZ (GÖVDE) ---
-if st.button("PİYASAYI TARA", use_container_width=True):
-    with st.spinner('mircndl algoritmaları çalışıyor...'):
-        time.sleep(0.8)
+# --- ARAYÜZ ---
+if st.button("PİYASAYI TARA"):
+    with st.spinner('Grafikler oluşturuluyor...'):
         firsatlar = verileri_analiz_et()
         
         if firsatlar:
-            st.success(f"Analiz Tamamlandı: {len(firsatlar)} Mum Formasyonu Bulundu")
+            st.success(f"{len(firsatlar)} Mum Formasyonu Tespit Edildi")
             
             for s in firsatlar:
-                st.markdown(f"""
-                <div class="signal-card">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                        <span class="hisse-baslik">{s['sembol']}</span>
-                        <span class="kalite-badge">{s['kalite']}</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between;">
-                        <div>
-                            <div class="bilgi-baslik">GÜNCEL FİYAT</div>
-                            <div class="bilgi-deger">{s['fiyat']:.2f} ₺</div>
-                        </div>
-                        <div style="text-align:right;">
-                            <div class="bilgi-baslik">HEDEF</div>
-                            <div class="bilgi-deger" style="color:#4CAF50;">{s['hedef']:.2f} ₺</div>
-                        </div>
-                    </div>
-                    <div style="margin-top:10px; padding-top:10px; border-top:1px solid #333; display:flex; justify-content:space-between; align-items:center;">
-                         <span style="font-size:12px; color:#666;">RSI Göstergesi</span>
-                         <span style="color:orange; font-weight:bold;">{s['rsi']:.1f}</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                # Kart Başlığı
+                st.markdown(f"### 📈 {s['sembol']}")
+                
+                col1, col2 = st.columns(2)
+                col1.metric("Fiyat", f"{s['fiyat']:.2f} ₺")
+                col2.metric("RSI", f"{s['rsi']:.1f}")
+                
+                # --- İŞTE BURADA GRAFİĞİ ÇİZİYORUZ ---
+                fig = grafik_ciz(s['sembol'], s['veri'])
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.divider() # Çizgi çek
         else:
-            st.warning("Şu an stratejiye uygun mum yapısı oluşmadı.")
-            st.caption("Takip Listesi: BIST 30 (THYAO, ASELS, KCHOL...)")
+            st.warning("Şu an stratejiye uygun grafik bulunamadı.")
