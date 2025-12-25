@@ -1,199 +1,210 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
-import datetime
 
 # --- 1. AYARLAR ---
 st.set_page_config(
-    page_title="MIRCNDL v8.1", 
-    page_icon="🐂", 
-    layout="wide", 
-    initial_sidebar_state="collapsed"
+    page_title="MIRCNDL PRO",
+    page_icon="🦅",
+    layout="wide", # Tam ekran modu
+    initial_sidebar_state="collapsed" # Menü kapalı
 )
 
-# --- DEV LİSTE (BIST 100 + YAN TAHTALAR) ---
-BIST_DEV_LISTE = [
-    "THYAO.IS", "ASELS.IS", "KCHOL.IS", "GARAN.IS", "AKBNK.IS", "ISCTR.IS", "SISE.IS", "EREGL.IS", "BIMAS.IS",
-    "TUPRS.IS", "SAHOL.IS", "YKBNK.IS", "FROTO.IS", "TOASO.IS", "PGSUS.IS", "TCELL.IS", "PETKM.IS", "EKGYO.IS",
-    "SASA.IS", "HEKTS.IS", "KOZAL.IS", "KRDMD.IS", "ENKAI.IS", "VESTL.IS", "TTKOM.IS", "ARCLK.IS", "SOKM.IS",
-    "MGROS.IS", "KONTR.IS", "GESAN.IS", "SMRTG.IS", "EUPWR.IS", "ALFAS.IS", "ASTOR.IS", "MIATK.IS", "REEDR.IS",
-    "AGROT.IS", "CVKMD.IS", "SDTTR.IS", "ONCSM.IS", "TARKM.IS", "IZENR.IS", "TATEN.IS", "PASEU.IS", "VBTYZ.IS",
-    "KBORU.IS", "PEKGY.IS", "GUBRF.IS", "ODAS.IS", "ZOREN.IS", "TSKB.IS", "SKBNK.IS", "SNGYO.IS", "KLSER.IS",
-    "CANTE.IS", "QUAGR.IS", "YEOTK.IS", "CWENE.IS", "PENTA.IS", "BFREN.IS", "BRSAN.IS", "CIMSA.IS", "DOAS.IS",
-    "EGEEN.IS", "ENJSA.IS", "GLYHO.IS", "GWIND.IS", "ISMEN.IS", "JANTS.IS", "KCAER.IS", "KMPUR.IS", "KORDS.IS",
-    "MAVI.IS", "OTKAR.IS", "OYAKC.IS", "SBCS.IS", "TAVHL.IS", "TEKFEN.IS", "VESBE.IS", "ZOREN.IS", "AKSEN.IS",
-    "ALARK.IS", "ALKIM.IS", "AEFES.IS", "AYDEM.IS", "BAGFS.IS", "BERA.IS", "BIOEN.IS", "BRISA.IS", "CCOLA.IS",
-    "CEMTS.IS", "DEVA.IS", "ECILC.IS", "GENIL.IS", "GOZDE.IS", "IHLAS.IS", "IPEKE.IS", "KARSN.IS", "KARTN.IS",
-    "LOGO.IS", "NTHOL.IS", "NETAS.IS", "PARSN.IS", "PRKME.IS", "RTAAL.IS", "SELEC.IS", "TRGYO.IS", "TMSN.IS",
-    "TURSG.IS", "ULKER.IS", "VERUS.IS", "YATAS.IS", "YYLGD.IS"
-]
-
-# --- HAFIZA ---
-if 'sayfa' not in st.session_state: st.session_state.sayfa = 'anasayfa'
-if 'secilen_hisse' not in st.session_state: st.session_state.secilen_hisse = None
-if 'tarama_sonuclari' not in st.session_state: st.session_state.tarama_sonuclari = []
-
-# --- CSS ---
+# --- CSS (MATRIX DARK MODE) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #0E1117; color: #e0e0e0; }
-    .block-container { padding-top: 1rem; }
+    /* Full Siyah Arka Plan */
+    .stApp { background-color: #000000; color: #00FF41; }
     
-    /* Kartlar */
-    .scan-card {
-        background-color: #161b22; padding: 15px; border-radius: 10px;
-        border: 1px solid #30363d; margin-bottom: 10px;
-        display: flex; justify-content: space-between; align-items: center;
+    /* Gereksiz boşlukları sil */
+    .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 1rem; padding-right: 1rem; }
+    
+    /* Arama Kutusu Stili */
+    input[type="text"] {
+        background-color: #111; color: #00FF41; border: 1px solid #333;
+        font-size: 20px; font-weight: bold; text-transform: uppercase;
     }
-    .breakout-card {
-        background-color: #1a2e1a; padding: 15px; border-radius: 10px;
-        border: 2px solid #00E676; margin-bottom: 10px;
-        box-shadow: 0 0 10px rgba(0, 230, 118, 0.3);
-        display: flex; justify-content: space-between; align-items: center;
-    }
-    .stButton>button { border-radius: 8px; font-weight: bold; border: none; }
+    
+    /* Üstteki Streamlit menüsünü gizle */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Metrik Kutuları */
+    div[data-testid="stMetricValue"] { font-size: 24px; color: white; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FONKSİYONLAR ---
-def sayfaya_git(sayfa_adi):
-    st.session_state.sayfa = sayfa_adi
-    st.rerun()
-
-def hisse_sec(sembol):
-    st.session_state.secilen_hisse = sembol
-    st.session_state.sayfa = 'hisse_detay'
-    st.rerun()
-
-@st.cache_data(ttl=600)
-def teknik_tara(strateji, hisse_listesi):
-    sonuclar = []
-    # İlerleme Çubuğu
-    bar = st.progress(0, text="Başlıyor...")
+# --- 2. SÜPER ALGORİTMA MOTORU (TREND MAGIC) ---
+def super_algoritma_hesapla(df):
+    # Basit ama etkili bir SuperTrend benzeri mantık
+    # 1. ATR Hesapla (Oynaklık)
+    high_low = df['High'] - df['Low']
+    high_close = np.abs(df['High'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Close'].shift())
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = np.max(ranges, axis=1)
+    atr = true_range.rolling(14).mean()
     
-    for i, sembol in enumerate(hisse_listesi):
-        bar.progress((i + 1) / len(hisse_listesi), text=f"Taranıyor: {sembol}")
-        try:
-            # Günlük veri
-            df = yf.download(sembol, period="3mo", interval="1d", progress=False)
-            if len(df) < 50: continue
-            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(1)
+    # 2. Üst ve Alt Bantlar
+    multiplier = 3.0
+    upper_band = ((df['High'] + df['Low']) / 2) + (multiplier * atr)
+    lower_band = ((df['High'] + df['Low']) / 2) - (multiplier * atr)
+    
+    # 3. Trend Yönünü Belirle
+    in_uptrend = True
+    trend_data = []
+    
+    # Basitleştirilmiş Trend Takibi
+    close = df['Close'].values
+    upper = upper_band.values
+    lower = lower_band.values
+    
+    trend = np.zeros(len(df))
+    trend[0] = 1
+    
+    for i in range(1, len(df)):
+        if close[i] > upper[i-1]:
+            trend[i] = 1 # Yükseliş
+        elif close[i] < lower[i-1]:
+            trend[i] = -1 # Düşüş
+        else:
+            trend[i] = trend[i-1] # Değişim yok
             
-            son = df.iloc[-1]
-            # Breakout Hesapları
-            high_20 = df['High'].rolling(20).max().shift(1).iloc[-1]
-            vol_avg = df['Volume'].rolling(20).mean().iloc[-1]
-            
-            # İndikatörler
-            exp1 = df['Close'].ewm(span=12).mean(); exp2 = df['Close'].ewm(span=26).mean()
-            macd = exp1 - exp2; signal = macd.ewm(span=9).mean()
-            
-            delta = df['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14).mean()
-            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            rsi_val = rsi.iloc[-1]
-            
-            uygun = False; mesaj = ""; stil = "normal"
+            # Bantları sıkılaştır
+            if trend[i] == 1 and lower[i] < lower[i-1]: lower[i] = lower[i-1]
+            if trend[i] == -1 and upper[i] > upper[i-1]: upper[i] = upper[i-1]
 
-            if strateji == "breakout":
-                # Fiyat zirveyi kırdı mı VE Hacim ortalamanın üstünde mi?
-                if (son['Close'] > high_20) and (son['Volume'] > vol_avg):
-                    uygun = True
-                    mesaj = f"🐂 HACİMLİ KIRILIM! (Direnç: {high_20:.2f})"
-                    stil = "breakout"
-            
-            elif strateji == "macd_rsi":
-                if macd.iloc[-1] > signal.iloc[-1] and rsi_val < 70:
-                    uygun = True; mesaj = f"MACD AL & RSI {rsi_val:.0f}"
-            
-            elif strateji == "ema_cross":
-                 df['SMA50'] = df['Close'].rolling(50).mean()
-                 df['SMA200'] = df['Close'].rolling(200).mean()
-                 if df['SMA50'].iloc[-1] > df['SMA200'].iloc[-1]:
-                     uygun = True; mesaj = "Golden Cross Trendi"
+    df['Trend'] = trend
+    df['LowerBand'] = lower
+    df['UpperBand'] = upper
+    
+    # Sinyal Noktaları (Oklar için)
+    df['Buy_Signal'] = (df['Trend'] == 1) & (df['Trend'].shift(1) == -1)
+    df['Sell_Signal'] = (df['Trend'] == -1) & (df['Trend'].shift(1) == 1)
+    
+    return df
 
-            if uygun:
-                sonuclar.append({"sembol": sembol.replace(".IS", ""), "fiyat": son['Close'], "mesaj": mesaj, "stil": stil})
-        except: continue
-    
-    bar.empty()
-    return sonuclar
+# --- 3. ARAYÜZ VE GRAFİK ---
 
-# --- SAYFALAR ---
+# --- ÜST BAR (ARAMA VE BİLGİ) ---
+col_search, col_info = st.columns([1, 4])
 
-# ANASAYFA
-if st.session_state.sayfa == 'anasayfa':
-    st.write("## 🐂 MIRCNDL v8.1 (GÜNCEL)")
-    st.success("Sistem Aktif! Eğer bu yeşil yazıyı görüyorsan güncelleme başarılıdır.")
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("🛠️ TEKNİK TARAMA", type="primary"): sayfaya_git('teknik_menu')
-    with c2:
-        st.info("Piyasa Verileri: BIST GENEL (Gecikmeli)")
-
-# TEKNİK MENÜ
-elif st.session_state.sayfa == 'teknik_menu':
-    c_back, c_title = st.columns([1, 4])
-    with c_back:
-        if st.button("⬅️"): sayfaya_git('anasayfa')
-    with c_title:
-        st.subheader("🛠️ Teknik Algoritmalar")
-    
-    # AYARLAR
-    strateji = st.selectbox("Strateji", [
-        ("🐂 Hacimli Kırılım (Breakout)", "breakout"),
-        ("⚡ MACD + RSI", "macd_rsi"),
-        ("📈 Golden Cross", "ema_cross")
-    ])
-    
-    # HIZLI TEST KUTUSU
-    hizli_test = st.checkbox("⚡ Hızlı Test Modu (Sadece ilk 10 hisseyi tara)", value=True)
-    
-    if st.button("🚀 TARAMAYI BAŞLAT"):
-        liste = BIST_DEV_LISTE[:10] if hizli_test else BIST_DEV_LISTE
-        st.session_state.tarama_sonuclari = teknik_tara(strateji[1], liste)
-    
-    st.write("---")
-    
-    if st.session_state.tarama_sonuclari:
-        st.success(f"{len(st.session_state.tarama_sonuclari)} Sonuç Bulundu")
-        for s in st.session_state.tarama_sonuclari:
-            # Kart Stili
-            css_class = "breakout-card" if s['stil'] == "breakout" else "scan-card"
-            color = "#00E676" if s['stil'] == "breakout" else "#58a6ff"
-            
-            c_info, c_btn = st.columns([3, 1])
-            with c_info:
-                st.markdown(f"""
-                <div class="{css_class}">
-                    <div style="color:{color}; font-weight:bold; font-size:18px;">{s['sembol']}</div>
-                    <div style="color:#ddd; font-size:13px;">{s['mesaj']}</div>
-                    <div style="color:white; font-weight:bold;">{s['fiyat']:.2f} ₺</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_btn:
-                if st.button("🔍", key=f"btn_{s['sembol']}"):
-                    hisse_sec(s['sembol'])
+with col_search:
+    # Arama Kutusu (Varsayılan THYAO)
+    hisse_kodu = st.text_input("HİSSE ARA (Örn: SASA, BTC-USD)", value="THYAO").upper()
+    if not hisse_kodu.endswith(".IS") and not "-" in hisse_kodu and len(hisse_kodu) < 6:
+        # BIST hissesi ise sonuna .IS ekleyelim (Kullanıcı yorulmasın)
+        ticker_symbol = hisse_kodu + ".IS"
     else:
-        if not hizli_test: st.warning("Bu stratejiye uyan hisse bulunamadı.")
+        ticker_symbol = hisse_kodu
 
-# HİSSE DETAY
-elif st.session_state.sayfa == 'hisse_detay':
-    sembol = st.session_state.secilen_hisse
-    c_back, c_title = st.columns([1, 4])
-    with c_back:
-        if st.button("⬅️"): sayfaya_git('teknik_menu')
-    with c_title:
-        st.markdown(f"### {sembol}")
+# Veri Çekme
+try:
+    df = yf.download(ticker_symbol, period="1y", interval="1d", progress=False)
     
-    try:
-        df = yf.download(sembol+".IS", period="6mo", interval="1d", progress=False)
-        fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-        fig.update_layout(template="plotly_dark", height=350, xaxis_rangeslider_visible=False)
-        st.plotly_chart(fig, use_container_width=True)
-    except:
-        st.error("Grafik yüklenemedi.")
+    if len(df) > 0:
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(1)
+        
+        # Algoritmayı Çalıştır
+        df = super_algoritma_hesapla(df)
+        son = df.iloc[-1]
+        
+        # Bilgi Paneli
+        with col_info:
+            c1, c2, c3, c4 = st.columns(4)
+            delta_val = son['Close'] - df.iloc[-2]['Close']
+            c1.metric("FİYAT", f"{son['Close']:.2f}", f"{delta_val:.2f}")
+            
+            durum = "YÜKSELİŞ TRENDİ 🚀" if son['Trend'] == 1 else "DÜŞÜŞ TRENDİ 🔻"
+            renk = "normal" if son['Trend'] == 1 else "inverse"
+            c2.metric("SİNYAL", durum, delta_color=renk)
+            
+            # Araçlar (Checkbox)
+            with c3: show_ma = st.checkbox("Ortalamalar (EMA)", value=True)
+            with c4: show_super = st.checkbox("Süper Algoritma", value=True)
+
+        # --- GRAFİK ÇİZİMİ (TRADINGVIEW TARZI) ---
+        fig = go.Figure()
+
+        # 1. Mumlar
+        fig.add_trace(go.Candlestick(
+            x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+            name="Fiyat",
+            increasing_line_color='#00FF41', decreasing_line_color='#FF3333'
+        ))
+
+        # 2. SÜPER ALGORİTMA (Çizgiler ve Oklar)
+        if show_super:
+            # Yeşil Hat (Destek)
+            fig.add_trace(go.Scatter(
+                x=df.index, y=df['LowerBand'], 
+                mode='lines', line=dict(color='rgba(0, 255, 65, 0.4)', width=1), 
+                name="Trend Desteği"
+            ))
+            # Kırmızı Hat (Direnç)
+            fig.add_trace(go.Scatter(
+                x=df.index, y=df['UpperBand'], 
+                mode='lines', line=dict(color='rgba(255, 51, 51, 0.4)', width=1), 
+                name="Trend Direnci"
+            ))
+
+            # AL SİNYALİ (YEŞİL OK)
+            buy_signals = df[df['Buy_Signal']]
+            fig.add_trace(go.Scatter(
+                x=buy_signals.index, y=buy_signals['Low'] * 0.98,
+                mode='markers', 
+                marker=dict(symbol='triangle-up', size=15, color='#00FF41'),
+                name="AL SİNYALİ"
+            ))
+
+            # SAT SİNYALİ (KIRMIZI OK)
+            sell_signals = df[df['Sell_Signal']]
+            fig.add_trace(go.Scatter(
+                x=sell_signals.index, y=sell_signals['High'] * 1.02,
+                mode='markers', 
+                marker=dict(symbol='triangle-down', size=15, color='#FF3333'),
+                name="SAT SİNYALİ"
+            ))
+
+        # 3. Ekstra Araçlar (EMA vb.)
+        if show_ma:
+            df['EMA50'] = df['Close'].ewm(span=50).mean()
+            fig.add_trace(go.Scatter(x=df.index, y=df['EMA50'], line=dict(color='yellow', width=1), name="EMA 50"))
+
+        # GRAFİK AYARLARI (ÇİZİM ARAÇLARI AKTİF)
+        fig.update_layout(
+            height=650, # Ekranı kaplasın
+            template="plotly_dark",
+            paper_bgcolor='black', plot_bgcolor='black',
+            xaxis_rangeslider_visible=False,
+            margin=dict(l=0, r=0, t=0, b=0),
+            # Çizim Modu Butonları
+            dragmode='pan', # Varsayılan kaydırma
+            modebar=dict(
+                orientation='v', # Dikey Toolbar
+                bgcolor='#222',
+                color='#00FF41',
+                activecolor='white'
+            )
+        )
+        
+        # TRADINGVIEW GİBİ ÇİZİM ARAÇLARI EKLİYORUZ
+        config = {
+            'scrollZoom': True,
+            'displayModeBar': True,
+            'modeBarButtonsToAdd': [
+                'drawline', 'drawopenpath', 'drawcircle', 'drawrect', 'eraseshape'
+            ],
+            'modeBarButtonsToRemove': ['lasso2d', 'select2d']
+        }
+
+        st.plotly_chart(fig, use_container_width=True, config=config)
+
+    else:
+        st.error("Hisse bulunamadı. Lütfen kodu doğru yazın (Örn: THYAO, GARAN).")
+
+except Exception as e:
+    st.error(f"Veri çekme hatası: {e}")
